@@ -39,7 +39,7 @@ pub fn deps(file: &str, ignore: &[&str]) -> Result<(String,HashSet<String>),Stri
             }
         } else if xline.contains(file) {
             format = xline.split(':')
-                .nth(1).unwrap_or("").trim()
+                .last().unwrap_or("").trim()
                 .split_whitespace().last().unwrap_or("").to_owned();
         }
     }

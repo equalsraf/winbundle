@@ -30,14 +30,15 @@ pub fn deps(file: &str, ignore: &[&str]) -> Result<(String,HashSet<String>),Stri
     let mut format = String::new();
     
     for line in out.lines() {
-        if line.starts_with("\tDLL Name:") {
-            if let Some(dll) = line.split(": ").nth(1) {
+        let xline = line.trim();
+        if xline.starts_with("DLL Name:") {
+            if let Some(dll) = xline.split(": ").nth(1) {
                 if !ignore.contains(&dll.to_lowercase().as_ref()) {
                     deps.insert(String::from(dll));
                 }
             }
-        } else if line.contains(file) {
-            format = line.split(':')
+        } else if xline.contains(file) {
+            format = xline.split(':')
                 .nth(1).unwrap_or("").trim()
                 .split_whitespace().last().unwrap_or("").to_owned();
         }

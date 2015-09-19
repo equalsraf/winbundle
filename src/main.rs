@@ -5,6 +5,7 @@ use clap::{App,Arg,SubCommand,AppSettings};
 use std::collections::HashSet;
 use std::path::{Path,PathBuf};
 use std::fs::{copy,create_dir_all,metadata};
+use std::env;
 
 mod objdump;
 
@@ -18,21 +19,62 @@ const SYSLIBS: &'static [&'static str] = &[
     "ws2_32.dll",
 ];
 
+/// Check if a DLL file exists and conforms to the given format
+fn dll_exists(path: &PathBuf, dllformat: &str) -> bool {
+    if let Ok(meta) = metadata(&path) {
+        if meta.is_file() {
+            match objdump::deps(&path.to_string_lossy(), SYSLIBS) {
+                Ok((ref fmt,_)) if fmt == dllformat  => true,
+                Ok((ref fmt,_)) => {
+                    println!("Skipping {}({}!={})", &path.to_string_lossy(), fmt, dllformat);
+                    false
+                },
+                Err(err) => {
+                    println!("{}", err);
+                    false
+                },
+            }
+        } else {
+            false
+        }
+    } else {
+        false
+    }
+}
+
 /// Find the absolute path for dll
+///
+/// If sysroot is not an empty string, it is used as a root path to find
+/// the DLLs (e.g. sysroot/bin and sysroot/lib). If sysroot is empty the
+/// $PATH environment variable is used, if $PATH is not set fallback to
+/// the current directory.
+///
 fn find_dll(dllname: &str, dllformat: &str, sysroot: &str) -> Option<PathBuf> {
 
-    // Try sysroot and sysroot/bin
-    for prefix in &["", "bin", "lib"] {
-        let mut p = Path::new(sysroot).to_path_buf();
-        p.push(prefix);
-        p.push(dllname);
-        if let Ok(meta) = metadata(&p) {
-            if meta.is_file() {
-                match objdump::deps(&p.to_string_lossy(), SYSLIBS) {
-                    Ok((ref fmt,_)) if fmt == dllformat  => return Some(p),
-                    Ok((ref fmt,_)) => println!("Skipping {}({}!={})", p.to_string_lossy(), fmt, dllformat),
-                    Err(err) => println!("{}", err),
+    if sysroot.is_empty() {
+        match env::var_os("PATH") {
+            Some(env_path) => for prefix in env::split_paths(&env_path) {
+                let mut path = prefix.clone();
+                path.push(dllname);
+                if dll_exists(&path, dllformat) {
+                    return Some(path)
                 }
+            },
+            None => {
+                let path = Path::new(dllname).to_path_buf();
+                if dll_exists(&path, dllformat) {
+                    return Some(path)
+                }
+            },
+        }
+    } else {
+        // Try sysroot, sysroot/bin, sysroot/lib
+        for prefix in &["", "bin", "lib"] {
+            let mut p = Path::new(sysroot).to_path_buf();
+            p.push(prefix);
+            p.push(dllname);
+            if dll_exists(&p, dllformat) {
+                return Some(p);
             }
         }
     }

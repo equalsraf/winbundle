@@ -2,7 +2,7 @@
 extern crate clap;
 
 use clap::{App,Arg,SubCommand,AppSettings};
-use std::collections::HashSet;
+use std::collections::{HashMap};
 use std::path::{Path,PathBuf};
 use std::fs::{copy,create_dir_all,metadata};
 use std::env;
@@ -12,35 +12,14 @@ mod objdump;
 // list of system dlls (lowercase)
 const SYSLIBS: &'static [&'static str] = &[
     "advapi32.dll",
+    "gdi32.dll",
     "kernel32.dll",
     "msvcrt.dll",
     "shell32.dll",
     "userenv.dll",
+    "user32.dll",
     "ws2_32.dll",
 ];
-
-/// Check if a DLL file exists and conforms to the given format
-fn dll_exists(path: &PathBuf, dllformat: &str) -> bool {
-    if let Ok(meta) = metadata(&path) {
-        if meta.is_file() {
-            match objdump::deps(&path.to_string_lossy(), SYSLIBS) {
-                Ok((ref fmt,_)) if fmt == dllformat  => true,
-                Ok((ref fmt,_)) => {
-                    println!("Skipping {}({}!={})", &path.to_string_lossy(), fmt, dllformat);
-                    false
-                },
-                Err(err) => {
-                    println!("{}", err);
-                    false
-                },
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    }
-}
 
 /// Find the absolute path for dll
 ///
@@ -49,21 +28,29 @@ fn dll_exists(path: &PathBuf, dllformat: &str) -> bool {
 /// $PATH environment variable is used, if $PATH is not set fallback to
 /// the current directory.
 ///
-fn find_dll(dllname: &str, dllformat: &str, sysroot: &str) -> Option<PathBuf> {
+fn find_dll(dllname: &str, dllformat: &str, sysroot: &str) -> Option<(PathBuf,Vec<String>)> {
 
     if sysroot.is_empty() {
         match env::var_os("PATH") {
             Some(env_path) => for prefix in env::split_paths(&env_path) {
-                let mut path = prefix.clone();
-                path.push(dllname);
-                if dll_exists(&path, dllformat) {
-                    return Some(path)
+                let mut p = prefix.clone();
+                p.push(dllname);
+                if let Ok((fmt,dlldeps)) = objdump::deps(&p.to_string_lossy()) {
+                    if fmt == dllformat {
+                        return Some((p,dlldeps));
+                    } else {
+                        println!("Skipping {}({}!={})", &p.to_string_lossy(), fmt, dllformat);
+                    }
                 }
             },
             None => {
-                let path = Path::new(dllname).to_path_buf();
-                if dll_exists(&path, dllformat) {
-                    return Some(path)
+                let p = Path::new(dllname).to_path_buf();
+                if let Ok((fmt,dlldeps)) = objdump::deps(&p.to_string_lossy()) {
+                    if fmt == dllformat {
+                        return Some((p,dlldeps));
+                    } else {
+                        println!("Skipping {}({}!={})", &p.to_string_lossy(), fmt, dllformat);
+                    }
                 }
             },
         }
@@ -73,8 +60,12 @@ fn find_dll(dllname: &str, dllformat: &str, sysroot: &str) -> Option<PathBuf> {
             let mut p = Path::new(sysroot).to_path_buf();
             p.push(prefix);
             p.push(dllname);
-            if dll_exists(&p, dllformat) {
-                return Some(p);
+            if let Ok((fmt,dlldeps)) = objdump::deps(&p.to_string_lossy()) {
+                if fmt == dllformat {
+                    return Some((p,dlldeps));
+                } else {
+                    println!("Skipping {}({}!={})", &p.to_string_lossy(), fmt, dllformat);
+                }
             }
         }
     }
@@ -114,18 +105,42 @@ fn main() {
         (_,_) => panic!("Invalid subcommand"),
     };
 
+    // Find all direct dependency names
     let mut dllfmt = String::new();
-    let mut deps: HashSet<String> = HashSet::new();
+    let mut missing_dlls: Vec<String> = Vec::new();
+
     for obj in cmdargs.values_of("obj").unwrap() {
-        if let Ok((format, objdeps)) = objdump::deps(obj, SYSLIBS) {
+        if let Ok((format, objdeps)) = objdump::deps(obj) {
             if !dllfmt.is_empty() && format != dllfmt {
                 println!("We don't support mixed binaries ({} vs {})", format, dllfmt);
                 return;
             }
             dllfmt = format;
-            deps = deps.union(&objdeps).cloned().collect();
+            for dll_name in objdeps {
+                if !SYSLIBS.contains(&dll_name.to_lowercase().as_ref()) {
+                    missing_dlls.push(dll_name.to_owned());
+                }
+            }
         } else {
             return;
+        }
+    }
+
+    // Find paths for all dependencies
+    let mut done = HashMap::new();
+    while !missing_dlls.is_empty() {
+        let dllname = missing_dlls.remove(0);
+        if done.contains_key(&dllname) {
+            continue;
+        }
+        let (dllpath,dlldeps) = find_dll(&dllname, &dllfmt, args.value_of("sysroot").unwrap_or(""))
+                    .unwrap_or_else(||{panic!("Unable to find {}", dllname)});
+
+        done.insert(dllname,dllpath);
+        for new_dllname in dlldeps {
+            if !SYSLIBS.contains(&new_dllname.to_lowercase().as_ref()) {
+                missing_dlls.push(new_dllname);
+            }
         }
     }
 
@@ -137,9 +152,7 @@ fn main() {
         }
 
         // Copy dependencies to outpath
-        for dllname in deps {
-            let src = find_dll(&dllname, &dllfmt, args.value_of("sysroot").unwrap_or(""))
-                            .unwrap_or_else(||{ panic!("Unable to find {}", dllname) });
+        for (_,src) in done {
             let mut dst = outpath.to_path_buf();
             dst.push(src.file_name().unwrap());
             if let Ok(_) = metadata(&dst) {
@@ -157,10 +170,8 @@ fn main() {
             copy(obj, dst).unwrap();
         }
     } else {
-        for dllname in deps {
-            let src = find_dll(&dllname, &dllfmt, args.value_of("sysroot").unwrap_or(""))
-                            .unwrap_or_else(||{ panic!("Unable to find {}", dllname) });
-            println!("{}", src.to_string_lossy());
+        for (_, path) in done {
+            println!("{}", path.to_string_lossy());
         }
     }
 }

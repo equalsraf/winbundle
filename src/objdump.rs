@@ -1,18 +1,21 @@
 
-use std::collections::HashSet;
 use std::process::Command;
+use std::fs::metadata;
 
 /// Find dependencies for the given exe/dll
 ///
-/// ignore is a list of dll names that should not
-/// be added to deps.
-///
 /// Returns (format, deps) format is the binary format
-/// (e.g. pei-x86-64) deps is a set of dependency dlls.
+/// (e.g. pei-x86-64) deps is the list of dependency dlls.
 ///
 /// Internally this calls objdump -p <file>
 ///
-pub fn deps(file: &str, ignore: &[&str]) -> Result<(String,HashSet<String>),String> {
+pub fn deps(file: &str) -> Result<(String,Vec<String>),String> {
+
+    match metadata(file) {
+        Err(err) => return Err(format!("Error opening {}: {}", file, err)),
+        Ok(ref meta) if !meta.is_file() => return Err(format!("Not a file: {}", file)),
+        _ => (),
+    }
 
     let command = Command::new("objdump")
         .arg("-p")
@@ -25,7 +28,7 @@ pub fn deps(file: &str, ignore: &[&str]) -> Result<(String,HashSet<String>),Stri
                  String::from_utf8_lossy(&command.stderr)));
     }
 
-    let mut deps = HashSet::new();
+    let mut deps = Vec::new();
     let out = String::from_utf8_lossy(&command.stdout);
     let mut format = String::new();
     
@@ -33,9 +36,7 @@ pub fn deps(file: &str, ignore: &[&str]) -> Result<(String,HashSet<String>),Stri
         let xline = line.trim();
         if xline.starts_with("DLL Name:") {
             if let Some(dll) = xline.split(": ").nth(1) {
-                if !ignore.contains(&dll.to_lowercase().as_ref()) {
-                    deps.insert(String::from(dll));
-                }
+                deps.push(String::from(dll));
             }
         } else if xline.contains(file) {
             format = xline.split(':')

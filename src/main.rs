@@ -1,4 +1,4 @@
-
+#[macro_use]
 extern crate clap;
 
 use clap::{App,Arg,SubCommand,AppSettings};
@@ -75,8 +75,11 @@ fn find_dll(dllname: &str, dllformat: &str, sysroot: &str) -> Option<(PathBuf,Ve
 fn main() {
     let args = App::new("winbundle")
                 .about("Bundle DLLs for Windows targets")
+                .version(&crate_version!()[..])
+                .version_short("v")
                 .settings(&[AppSettings::SubcommandRequired,
                     AppSettings::VersionlessSubcommands,
+                    AppSettings::GlobalVersion,
                     AppSettings::UnifiedHelpMessage,
                     AppSettings::SubcommandRequiredElseHelp])
                 .arg(Arg::with_name("sysroot")

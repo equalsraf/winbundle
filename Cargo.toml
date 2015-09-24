@@ -4,4 +4,4 @@ version = "0.1.0"
 authors = ["equalsraf"]
 
 [dependencies]
-clap = "1.4.0"
+clap = "1.4.1"

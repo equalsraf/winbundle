@@ -13,7 +13,10 @@ build_script:
 # Use winbundle to deploy itself
 - target\debug\winbundle.exe bundle target\debug\winbundle\ target\debug\winbundle.exe
 test_script:
+# Tests need to find dumpbin
+- call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat"
 - cargo test
+- cargo test -- --ignored
 artifacts:
 - path: target/debug/winbundle
   name: winbundle

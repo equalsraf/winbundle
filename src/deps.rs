@@ -98,3 +98,16 @@ pub fn deps_for(file: &str) -> Result<(String,Vec<String>),String> {
     }
 }
 
+#[cfg(windows)]
+#[ignore]
+#[test]
+fn test_msvcp110() {
+    let (fmt,deps) = dumpbin_deps_for(r"c:\Windows\System32\msvcp110.dll").unwrap();
+    assert_eq!(deps, [r"MSVCR110.dll", r"KERNEL32.dll"]);
+    // TODO: assert_eq!(fmt, "x86");
+
+    let (fmt2,deps2) = objdump_deps_for(r"c:\Windows\System32\msvcp110.dll").unwrap();
+    assert_eq!(deps2, deps);
+    assert_eq!(fmt2, "pei-i386");
+}
+

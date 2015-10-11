@@ -113,19 +113,23 @@ fn main() {
     let mut missing_dlls: Vec<String> = Vec::new();
 
     for obj in cmdargs.values_of("obj").unwrap() {
-        if let Ok((format, objdeps)) = deps::deps_for(obj) {
-            if !dllfmt.is_empty() && format != dllfmt {
-                println!("We don't support mixed binaries ({} vs {})", format, dllfmt);
-                return;
-            }
-            dllfmt = format;
-            for dll_name in objdeps {
-                if !SYSLIBS.contains(&dll_name.to_lowercase().as_ref()) {
-                    missing_dlls.push(dll_name.to_owned());
+        match deps::deps_for(obj) {
+            Ok((format, objdeps)) => {
+                if !dllfmt.is_empty() && format != dllfmt {
+                    println!("We don't support mixed binaries ({} vs {})", format, dllfmt);
+                    return;
                 }
-            }
-        } else {
-            return;
+                dllfmt = format;
+                for dll_name in objdeps {
+                    if !SYSLIBS.contains(&dll_name.to_lowercase().as_ref()) {
+                        missing_dlls.push(dll_name.to_owned());
+                    }
+                }
+            },
+            Err(err) => {
+                println!("Error: {}", err);
+                return;
+            },
         }
     }
 

@@ -7,7 +7,7 @@ use std::path::{Path,PathBuf};
 use std::fs::{copy,create_dir_all,metadata};
 use std::env;
 
-mod objdump;
+mod deps;
 
 // list of system dlls (lowercase)
 const SYSLIBS: &'static [&'static str] = &[
@@ -35,7 +35,7 @@ fn find_dll(dllname: &str, dllformat: &str, sysroot: &str) -> Option<(PathBuf,Ve
             Some(env_path) => for prefix in env::split_paths(&env_path) {
                 let mut p = prefix.clone();
                 p.push(dllname);
-                if let Ok((fmt,dlldeps)) = objdump::deps(&p.to_string_lossy()) {
+                if let Ok((fmt,dlldeps)) = deps::deps_for(&p.to_string_lossy()) {
                     if fmt == dllformat {
                         return Some((p,dlldeps));
                     } else {
@@ -45,7 +45,7 @@ fn find_dll(dllname: &str, dllformat: &str, sysroot: &str) -> Option<(PathBuf,Ve
             },
             None => {
                 let p = Path::new(dllname).to_path_buf();
-                if let Ok((fmt,dlldeps)) = objdump::deps(&p.to_string_lossy()) {
+                if let Ok((fmt,dlldeps)) = deps::deps_for(&p.to_string_lossy()) {
                     if fmt == dllformat {
                         return Some((p,dlldeps));
                     } else {
@@ -60,7 +60,7 @@ fn find_dll(dllname: &str, dllformat: &str, sysroot: &str) -> Option<(PathBuf,Ve
             let mut p = Path::new(sysroot).to_path_buf();
             p.push(prefix);
             p.push(dllname);
-            if let Ok((fmt,dlldeps)) = objdump::deps(&p.to_string_lossy()) {
+            if let Ok((fmt,dlldeps)) = deps::deps_for(&p.to_string_lossy()) {
                 if fmt == dllformat {
                     return Some((p,dlldeps));
                 } else {
@@ -113,7 +113,7 @@ fn main() {
     let mut missing_dlls: Vec<String> = Vec::new();
 
     for obj in cmdargs.values_of("obj").unwrap() {
-        if let Ok((format, objdeps)) = objdump::deps(obj) {
+        if let Ok((format, objdeps)) = deps::deps_for(obj) {
             if !dllfmt.is_empty() && format != dllfmt {
                 println!("We don't support mixed binaries ({} vs {})", format, dllfmt);
                 return;

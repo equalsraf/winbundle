@@ -135,20 +135,30 @@ fn main() {
 
     // Find paths for all dependencies
     let mut done = HashMap::new();
+    let mut not_found = Vec::new();
     while !missing_dlls.is_empty() {
         let dllname = missing_dlls.remove(0);
         if done.contains_key(&dllname) {
             continue;
         }
-        let (dllpath,dlldeps) = find_dll(&dllname, &dllfmt, args.value_of("sysroot").unwrap_or(""))
-                    .unwrap_or_else(||{panic!("Unable to find {}", dllname)});
-
-        done.insert(dllname,dllpath);
-        for new_dllname in dlldeps {
-            if !SYSLIBS.contains(&new_dllname.to_lowercase().as_ref()) {
-                missing_dlls.push(new_dllname);
+        match find_dll(&dllname, &dllfmt, args.value_of("sysroot").unwrap_or("")) {
+            None => {
+                not_found.push(dllname);
+            },
+            Some((dllpath, dlldeps)) => {
+                done.insert(dllname,dllpath);
+                for new_dllname in dlldeps {
+                    if !SYSLIBS.contains(&new_dllname.to_lowercase().as_ref()) {
+                        missing_dlls.push(new_dllname);
+                    }
+                }
             }
         }
+
+    }
+
+    if !not_found.is_empty() {
+        panic!("The following DLLs could not be found: {:?}", not_found);
     }
 
     if cmdname == "bundle" {
